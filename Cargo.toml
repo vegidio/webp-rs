@@ -12,7 +12,7 @@ readme = "README.md"
 authors = ["Vinicius Egidio <me@vinicius.io>"]
 keywords = ["webp", "image", "libwebp", "encoding", "decoding"]
 categories = ["multimedia::images", "encoding"]
-exclude = [".github/", ".idea/", ".editorconfig", "assets/", "rustfmt.toml"]
+exclude = [".github/", ".idea/", ".editorconfig", "assets/", "examples/", "rustfmt.toml"]
 
 [lib]
 name = "webp"
