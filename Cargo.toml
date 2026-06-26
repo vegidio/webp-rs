@@ -1,0 +1,27 @@
+[package]
+name = "webp-rs"
+version = "26.6.0"
+edition = "2024"
+links = "webp"
+build = "build.rs"
+description = "Encode and decode WebP images via statically-linked libwebp."
+license = "Apache-2.0"
+repository = "https://github.com/vegidio/webp-rs"
+homepage = "https://github.com/vegidio/webp-rs"
+readme = "README.md"
+authors = ["Vinicius Egidio <me@vinicius.io>"]
+keywords = ["webp", "image", "libwebp", "encoding", "decoding"]
+categories = ["multimedia::images", "encoding"]
+exclude = [".github/", ".idea/", ".editorconfig", "assets/", "rustfmt.toml"]
+
+[lib]
+name = "webp"
+
+[dependencies]
+image = "0.25"
+thiserror = "2"
+
+[build-dependencies]
+bindgen = "0.72.1"
+ureq = "3"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
