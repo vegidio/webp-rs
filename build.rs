@@ -18,7 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// Version of the `binaries-webp` release to download.
-const VERSION: &str = "26.6.0";
+const VERSION: &str = "26.7.0";
 
 /// Static archives ship these `.a` libraries. Listed dependents-before-dependencies so
 /// that GNU ld's single-pass resolution finds every symbol (`libwebp` depends on
@@ -141,21 +141,28 @@ fn extract_zip(bytes: &[u8], dest: &Path) {
 fn emit_link_directives(lib_dir: &Path) {
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
 
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     for lib in STATIC_LIBS {
-        println!("cargo:rustc-link-lib=static={lib}");
+        // The Windows archives are MSVC `.lib` files that keep the `lib` prefix
+        // (`libwebp.lib`); MSVC resolves `static=NAME` to `NAME.lib` (no prefix added), so the
+        // prefix must be part of the link name. Unix `.a` archives use the bare base name.
+        if target_os == "windows" {
+            println!("cargo:rustc-link-lib=static=lib{lib}");
+        } else {
+            println!("cargo:rustc-link-lib=static={lib}");
+        }
     }
 
     // libwebp / libsharpyuv are C and only need libm + pthreads on Linux.
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     match target_os.as_str() {
         "linux" => {
             println!("cargo:rustc-link-lib=dylib=m");
             println!("cargo:rustc-link-lib=dylib=pthread");
         }
         "windows" => {
-            // The release `.a` archives are GNU-style; building for Windows therefore
-            // expects the `*-pc-windows-gnu` toolchain.
-            println!("cargo:rustc-link-lib=dylib=pthread");
+            // The release ships MSVC `.lib` archives, which link the C runtime
+            // automatically via the objects' default-lib directives, so no explicit
+            // runtime libraries are needed here.
         }
         _ => {}
     }

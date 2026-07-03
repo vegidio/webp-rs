@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut lossless = Vec::new();
     img.write_with_encoder(WebpEncoder::new_with_config(&mut lossless, config))?;
 
-    let out = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/lossless-example.webp");
+    let out = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/example_lossless.webp");
     std::fs::write(out, &lossless)?;
 
     println!("lossy:    {} bytes", lossy.len());

@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             .with_threads(true), // enable multithreaded encoding
     )?;
 
-    let out = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/custom-encoder-example.webp");
+    let out = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/example_custom-encoder.webp");
     std::fs::write(out, &bytes)?;
 
     println!("encoded {} bytes (quality 80, compression 6) -> {}", bytes.len(), out);

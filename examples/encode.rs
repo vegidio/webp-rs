@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Encode to WebP with sensible defaults (quality 75, compression 4).
     let bytes = webp::encode(&img)?;
 
-    let out = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/encode-example.webp");
+    let out = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/example_encode.webp");
     std::fs::write(out, &bytes)?;
 
     println!("encoded {} bytes -> {}", bytes.len(), out);
