@@ -18,7 +18,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// Version of the `binaries-webp` release to download.
-const VERSION: &str = "26.7.0";
+const VERSION: &str = "26.10.0";
 
 /// Static archives ship these `.a` libraries. Listed dependents-before-dependencies so
 /// that GNU ld's single-pass resolution finds every symbol (`libwebp` depends on
