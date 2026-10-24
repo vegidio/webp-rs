@@ -1,30 +1,32 @@
 //! Build script for `webp-rs`.
 //!
-//! At build time this script obtains the prebuilt **static** libwebp binaries (and the
-//! `sharpyuv` support library it depends on) for the current target, links them statically
-//! into the crate, and generates the raw FFI bindings from the bundled `encode.h` /
-//! `decode.h` headers.
+//! At build time this script obtains the prebuilt **bundle** libwebp binaries for the
+//! current target, links them statically into the crate, and generates the raw FFI bindings
+//! from the bundled `encode.h` / `decode.h` headers.
 //!
 //! Binaries come from: https://github.com/vegidio/binaries-webp/releases
 //!
 //! The binaries are normally downloaded from the pinned release and cached under the
 //! build's `OUT_DIR`. To build offline (or against a custom build of libwebp), set the
 //! `WEBP_BINARIES_DIR` environment variable to a directory that contains `include/` and
-//! `lib/` subdirectories laid out like the release archives.
+//! `lib/` subdirectories laid out like the extracted `bundle_<os>_<arch>.zip` archives.
 
+use bindgen::callbacks::{ItemInfo, ParseCallbacks};
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 /// Version of the `binaries-webp` release to download.
-const VERSION: &str = "26.10.0";
+const VERSION: &str = "26.10.1";
 
-/// Static archives ship these `.a` libraries. Listed dependents-before-dependencies so
-/// that GNU ld's single-pass resolution finds every symbol (`libwebp` depends on
-/// `libsharpyuv`). `libwebp.a` already contains the decoder, so `webpdecoder`/`demux`/`mux`
-/// are not linked.
-const STATIC_LIBS: &[&str] = &["webp", "sharpyuv"];
+/// The bundle archive ships a single static library (`libwebp.a`, or `webp.lib` on MSVC)
+/// that merges libwebp (encoder + decoder) with `libsharpyuv`.
+const STATIC_LIB: &str = "webp";
+
+/// Prefix the bundle adds to every symbol, libwebp's own API included: FFmpeg bundles libwebp
+/// too, so the API itself had to be made private to avoid clashing with a static FFmpeg.
+const SYMBOL_PREFIX: &str = "webprs_";
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -54,12 +56,14 @@ fn locate_binaries() -> PathBuf {
     download_and_extract()
 }
 
-/// Downloads the static archive for the current target into `OUT_DIR` and extracts it.
+/// Downloads the bundle archive for the current target into `OUT_DIR` and extracts it.
 /// Extraction is skipped if a previous build already populated the cache directory.
 fn download_and_extract() -> PathBuf {
     let archive = archive_name();
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
-    let cache_dir = out_dir.join(format!("binaries-webp-{VERSION}"));
+    // Distinct from the old `binaries-webp-{VERSION}` static cache, so a stale static
+    // download is never reused.
+    let cache_dir = out_dir.join(format!("binaries-webp-bundle-{VERSION}"));
 
     // Idempotent: a fully extracted cache from a previous build is reused as-is.
     if cache_dir.join("lib").is_dir() && cache_dir.join("include").is_dir() {
@@ -75,16 +79,19 @@ fn download_and_extract() -> PathBuf {
 }
 
 /// Maps the Cargo target triple components to the release archive file name,
-/// e.g. `static_osx_arm64.zip`.
+/// e.g. `bundle_osx_arm64.zip`. Windows GNU targets use the `mingw` (`.a`) archive, MSVC
+/// targets the `windows` (`.lib`) one.
 fn archive_name() -> String {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
 
-    let os = match target_os.as_str() {
-        "linux" => "linux",
-        "macos" => "osx",
-        "windows" => "windows",
-        other => panic!("webp-rs: unsupported target OS `{other}`"),
+    let os = match (target_os.as_str(), target_env.as_str()) {
+        ("linux", _) => "linux",
+        ("macos", _) => "osx",
+        ("windows", "gnu") => "mingw",
+        ("windows", _) => "windows",
+        (other, _) => panic!("webp-rs: unsupported target OS `{other}`"),
     };
 
     let arch = match target_arch.as_str() {
@@ -93,7 +100,7 @@ fn archive_name() -> String {
         other => panic!("webp-rs: unsupported target architecture `{other}`"),
     };
 
-    format!("static_{os}_{arch}.zip")
+    format!("bundle_{os}_{arch}.zip")
 }
 
 /// Downloads the given URL into memory, following redirects.
@@ -136,35 +143,35 @@ fn extract_zip(bytes: &[u8], dest: &Path) {
     }
 }
 
-/// Tells Cargo/rustc where the static libraries live and which ones to link, including
-/// the system libraries libwebp depends on.
+/// Tells Cargo/rustc where the bundled static library lives and links it, plus the system
+/// libraries libwebp depends on.
 fn emit_link_directives(lib_dir: &Path) {
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    println!("cargo:rustc-link-lib=static={STATIC_LIB}");
 
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    for lib in STATIC_LIBS {
-        // The Windows archives are MSVC `.lib` files that keep the `lib` prefix
-        // (`libwebp.lib`); MSVC resolves `static=NAME` to `NAME.lib` (no prefix added), so the
-        // prefix must be part of the link name. Unix `.a` archives use the bare base name.
-        if target_os == "windows" {
-            println!("cargo:rustc-link-lib=static=lib{lib}");
-        } else {
-            println!("cargo:rustc-link-lib=static={lib}");
-        }
+    // libwebp / libsharpyuv are C and only need libm + pthreads on Linux. macOS and mingw get
+    // everything from rustc's default libs, and the MSVC `.lib` archive links its C runtime
+    // via the objects' default-lib directives.
+    if env::var("CARGO_CFG_TARGET_OS").unwrap() == "linux" {
+        println!("cargo:rustc-link-lib=dylib=m");
+        println!("cargo:rustc-link-lib=dylib=pthread");
     }
+}
 
-    // libwebp / libsharpyuv are C and only need libm + pthreads on Linux.
-    match target_os.as_str() {
-        "linux" => {
-            println!("cargo:rustc-link-lib=dylib=m");
-            println!("cargo:rustc-link-lib=dylib=pthread");
-        }
-        "windows" => {
-            // The release ships MSVC `.lib` archives, which link the C runtime
-            // automatically via the objects' default-lib directives, so no explicit
-            // runtime libraries are needed here.
-        }
-        _ => {}
+/// Points every generated `extern` item at the bundle's prefixed symbol (`WebPEncodeRGBA` →
+/// `webprs_WebPEncodeRGBA`) while keeping the Rust-side name unchanged.
+///
+/// bindgen emits an overridden name as `#[link_name = "\u{1}..."]`, i.e. the exact object-file
+/// symbol, so LLVM does *not* add the platform's C symbol decoration. Apple targets prefix C
+/// symbols with `_`, so `symbol_prefix` must carry it there.
+#[derive(Debug)]
+struct PrefixedLinkNames {
+    symbol_prefix: String,
+}
+
+impl ParseCallbacks for PrefixedLinkNames {
+    fn generated_link_name_override(&self, item_info: ItemInfo<'_>) -> Option<String> {
+        Some(format!("{}{}", self.symbol_prefix, item_info.name))
     }
 }
 
@@ -174,6 +181,12 @@ fn generate_bindings(include_dir: &Path) {
     let encode_h = include_dir.join("encode.h");
     let decode_h = include_dir.join("decode.h");
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    let symbol_prefix = if env::var("CARGO_CFG_TARGET_VENDOR").unwrap() == "apple" {
+        format!("_{SYMBOL_PREFIX}")
+    } else {
+        SYMBOL_PREFIX.to_string()
+    };
 
     let bindings = bindgen::Builder::default()
         .header(encode_h.to_string_lossy())
@@ -185,6 +198,7 @@ fn generate_bindings(include_dir: &Path) {
         .allowlist_type("WebP.*")
         .allowlist_type("VP8.*")
         .allowlist_var("WEBP.*")
+        .parse_callbacks(Box::new(PrefixedLinkNames { symbol_prefix }))
         .generate_comments(false)
         .layout_tests(false)
         .generate()

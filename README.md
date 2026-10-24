@@ -104,7 +104,7 @@ cargo run --example version         # print the linked libwebp version
 
 ### My build fails because it can't download the binaries
 
-The first build fetches the prebuilt static libraries for your platform over the network. For offline or air-gapped builds, download the archive for your target from [binaries-webp](https://github.com/vegidio/binaries-webp/releases), extract it, and point the build at it with the `WEBP_BINARIES_DIR` environment variable:
+The first build fetches the prebuilt static libraries for your platform over the network. For offline or air-gapped builds, download the `bundle_<os>_<arch>.zip` archive for your target from [binaries-webp](https://github.com/vegidio/binaries-webp/releases), extract it, and point the build at it with the `WEBP_BINARIES_DIR` environment variable:
 
 ```
 $ WEBP_BINARIES_DIR=/path/to/extracted/libs cargo build
